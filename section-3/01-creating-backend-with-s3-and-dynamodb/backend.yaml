@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Encrypted Terraform Backend 
+Resources: 
+  TerraformBackends3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'aws:kms'
+              KMSMasterKeyID: !GetAtt TerraformBackendKMSKey.Arn
+            BucketKeyEnabled: true
+      VersioningConfiguration: 
+        Status: Enabled
+      Tags:
+        - Key: Project
+          Value: Terraform
+  TerraformBackendKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      EnableKeyRotation: true
+      MultiRegion: true
+      Tags:
+        - Key: Project
+          Value: Terraform
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: Allow current account to access KMS
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+  
+  TerraformBackendKMSAlias:
+    Type: AWS::KMS::Alias
+    Properties: 
+      AliasName: alias/terraform-backend
+      TargetKeyId: !Ref TerraformBackendKMSKey
+
+  TerraformBackendDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: LockID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: LockID
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      SSESpecification:
+        SSEType: KMS
+        SSEEnabled: true
+        KMSMasterKeyId: !GetAtt TerraformBackendKMSKey.Arn
+      Tags:
+        - Key: Project
+          Value: Terraform
+Outputs:
+  S3Bucket:
+    Description: The Terraform Backend S3 Bucket
+    Value: !Ref TerraformBackends3Bucket
+  DynamoDBTable:
+    Description: The Terraform Backend DynamoDB Table for handling locking
+    Value: !Ref TerraformBackendDynamoDBTable
